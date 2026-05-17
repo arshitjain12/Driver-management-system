@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  body {
+    @apply bg-slate-50 text-slate-800 font-sans antialiased;
+  }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-slate-200 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-slate-300; }
+}
+
+@layer components {
+
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-500 text-white
+           font-semibold text-sm shadow-sm hover:bg-brand-600 active:scale-95
+           transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-slate-700
+           font-semibold text-sm border border-slate-200 shadow-card hover:bg-slate-50
+           active:scale-95 transition-all duration-150;
+  }
+  .btn-danger {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500 text-white
+           font-semibold text-sm shadow-sm hover:bg-red-600 active:scale-95
+           transition-all duration-150;
+  }
+
+ 
+  .input {
+    @apply w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800
+           text-sm placeholder-slate-400 outline-none transition-all duration-150
+           focus:ring-2 focus:ring-brand-200 focus:border-brand-400;
+  }
+  .label {
+    @apply block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide;
+  }
+
+  
+  .card {
+    @apply bg-white rounded-2xl border border-slate-100 shadow-card;
+  }
+
+
+  .page-title {
+    @apply text-xl font-bold text-slate-800;
+  }
+  .page-sub {
+    @apply text-sm text-slate-400 mt-0.5;
+  }
+}
+
+
+.nav-active {
+  background: linear-gradient(90deg, #EEF2FF 0%, #F5F7FF 100%);
+}
+
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp 0.3s ease forwards; }
+
+
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite;
+  @apply rounded-lg;
+}
