@@ -414,59 +414,136 @@ const guestRequestTrip = async (req, res) => {
 }
 
 
+
 const guestReportDelay = async (req, res) => {
   try {
-    const { newScheduledAt, delayReason, newTravelNumber } = req.body
+    const { newScheduledAt, delayReason, newTravelNumber } = req.body;
     if (!newScheduledAt) {
-      return res.status(400).json({ success: false, message: 'newScheduledAt required' })
+      return res.status(400).json({ success: false, message: 'newScheduledAt required' });
     }
 
+    
     const trip = await Trip.findOne({
       _id:    req.params.tripId,
       guest:  req.user._id,
       status: { $nin: ['completed', 'cancelled'] },
-    }).populate('driver', 'name')
+    });
 
-    if (!trip) return res.status(404).json({ success: false, message: 'Trip not found' })
+    if (!trip) return res.status(404).json({ success: false, message: 'Trip not found' });
 
-    const oldTime    = trip.scheduledAt
-    trip.scheduledAt = new Date(newScheduledAt)
-    trip.status      = 'delayed'
-    if (newTravelNumber) trip.travelNumber = newTravelNumber
-
-    trip.statusHistory.push({
-      status:    'delayed',
-      updatedBy: req.user._id,
-      note: `Guest ne delay report kiya. Reason: ${delayReason || 'N/A'}. ${oldTime.toISOString()} → ${new Date(newScheduledAt).toISOString()}`,
-    })
-    await trip.save()
-
-    const newTimeStr = new Date(newScheduledAt).toLocaleString('en-IN', {
-      day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'
-    })
+    const oldTime = trip.scheduledAt;
+    const newScheduled = new Date(newScheduledAt);
+    
+    let driverStatusNote = '';
+    let shouldUnassignDriver = false;
 
     if (trip.driver) {
-      emitToUser(trip.driver._id || trip.driver, 'trip_delayed', {
-        message: `⏰ Trip delayed — Naya time: ${newTimeStr}. Reason: ${delayReason || 'N/A'}. Ruko, jaldi mat niklo.`,
+      
+      const { isDriverFreeAt } = require('./autoDispatchController');
+      
+      const free = await isDriverFreeAt(
+        trip.driver, 
+        newScheduled, 
+        trip.pickupLocation?.lat, 
+        trip.pickupLocation?.lng, 
+        trip.dropLocation?.lat, 
+        trip.dropLocation?.lng,
+        trip.travelMode
+      );
+
+      if (!free) {
+        shouldUnassignDriver = true;
+        driverStatusNote = `Driver busy tha naye time par, isliye trip wapas queue mein dali gayi.`;
+      }
+    }
+
+   
+    trip.scheduledAt = newScheduled;
+    if (newTravelNumber) trip.travelNumber = newTravelNumber;
+
+    if (shouldUnassignDriver) {
+   
+      if (trip.vehicle) {
+        await Vehicle.findByIdAndUpdate(trip.vehicle, { status: 'available', currentDriver: null });
+      }
+      trip.driver = null;
+      trip.vehicle = null;
+      trip.status = 'queued';
+
+     
+      trip.driverDepartureTime = null;
+      trip.estimatedPickupTime = null;
+      trip.estimatedBoardTime = null;
+      trip.estimatedDropTime = null;
+      trip.estimatedFreeTime = null;
+    } else {
+   
+      const driverToPickupMins = trip.driverToPickupMins || 15;
+      const pickupToDropMins   = trip.pickupToDropMins || 26;
+      const airportWaitMins    = trip.airportWaitMins || 25;
+
+      const driverDepartureTime = new Date(newScheduled.getTime() - (driverToPickupMins + 15) * 60 * 1000);
+      const estimatedPickupTime = newScheduled;
+      const estimatedBoardTime = new Date(newScheduled.getTime() + airportWaitMins * 60 * 1000);
+      const estimatedDropTime = new Date(estimatedBoardTime.getTime() + pickupToDropMins * 60 * 1000);
+      const estimatedFreeTime = new Date(estimatedDropTime.getTime() + 10 * 60 * 1000);
+
+      // Database mein naye calculated times dalo
+      trip.status = 'delayed';
+      trip.driverDepartureTime = driverDepartureTime;
+      trip.estimatedPickupTime = estimatedPickupTime;
+      trip.estimatedBoardTime = estimatedBoardTime;
+      trip.estimatedDropTime = estimatedDropTime;
+      trip.estimatedFreeTime = estimatedFreeTime;
+      
+      driverStatusNote = `Timeline naye time ke mutabik re-calculate ki gayi.`;
+    }
+
+    trip.statusHistory.push({
+      status: trip.status,
+      updatedBy: req.user._id,
+      note: `Guest ne delay kiya. Reason: ${delayReason || 'N/A'}. ${oldTime.toISOString()} → ${newScheduled.toISOString()}. ${driverStatusNote}`,
+    });
+
+    await trip.save();
+
+    const newTimeStr = newScheduled.toLocaleString('en-IN', {
+      day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'
+    });
+
+    
+    if (trip.driver && !shouldUnassignDriver) {
+      emitToUser(trip.driver, 'trip_delayed', {
+        message: `⏰ Trip delay ho gayi hai — Naya nikalne ka time: ${trip.driverDepartureTime.toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'})}. Abhi mat niklo!`,
         trip,
-      })
+      });
     }
 
     emitToRole('admin', 'trip_delayed', {
-      message: `Guest ne trip delay ki — Driver ko hold karo. Naya time: ${newTimeStr}`,
+      message: shouldUnassignDriver 
+        ? `🚨 Trip delay hui aur queue mein gayi (Driver busy tha). Naya time: ${newTimeStr}`
+        : `⏰ Trip delay hui (Same driver). Naya time: ${newTimeStr}`,
       trip,
-    })
+    });
+
+   
+    if (shouldUnassignDriver) {
+      const { processQueue } = require('./queueController');
+      processQueue(); 
+    }
 
     res.json({
       success: true,
-      message: `Driver aur admin notify ho gaye. Naya time: ${newTimeStr}`,
+      message: shouldUnassignDriver 
+        ? `Trip delay ke karan re-queue ho gayi hai kyuki driver busy tha.` 
+        : `Timeline update ho gayi hai! Naya time: ${newTimeStr}`,
       data: trip,
-    })
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message })
-  }
-}
+    });
 
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+};
 
 const guestReady = async (req, res) => {
   try {

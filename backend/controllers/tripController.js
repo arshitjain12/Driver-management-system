@@ -559,6 +559,45 @@ const getTodayTrips = async (req, res) => {
   }
 };
 
+
+const autoCancelExpiredQueuedTrips = async () => {
+  try {
+    const now = new Date();
+    
+   
+    const expiredTrips = await Trip.find({
+      status: 'queued',
+      scheduledAt: { $lt: now }
+    });
+
+    for (const trip of expiredTrips) {
+      trip.status = 'cancelled';
+      trip.cancelReason = 'System Auto-Cancel: Time nikal gaya par koi driver free nahi hua.';
+      trip.statusHistory.push({
+        status: 'cancelled',
+        updatedBy: null,
+        note: 'System auto-cancelled: No driver found until scheduled time.'
+      });
+      await trip.save();
+
+    
+      emitToUser(trip.guest, 'trip_timeout_cancelled', {
+        message: 'Maazrat! Aapke samay par koi driver available nahi ho saka. Kripya nayi trip book karein.',
+        tripId: trip._id
+      });
+      
+      emitToRole('admin', 'trip_expired_alert', {
+        message: `🚨 ALERT: Trip expire ho gayi hai! Koi driver nahi mila.`,
+        tripId: trip._id
+      });
+
+      console.log(`[System] Trip ${trip._id} auto-cancelled due to timeout.`);
+    }
+  } catch (error) {
+    console.error('[System] Auto-cancel cron error:', error.message);
+  }
+};
+
 module.exports = {
   createTrip,
   getAllTrips,
@@ -571,4 +610,5 @@ module.exports = {
   getMyTripsDriver,
   getMyTripsGuest,
   getTodayTrips,
+  autoCancelExpiredQueuedTrips,
 };
