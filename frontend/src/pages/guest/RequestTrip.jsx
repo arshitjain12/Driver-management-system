@@ -1,31 +1,35 @@
 import { useState } from 'react'
-import { MapPin, Clock, Users, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+import { Users, Clock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+import LocationPicker from '../../components/ui/LocationPicker'
 import api from '../../api/axios'
 
-const TRAVEL_MODES = ['flight', 'train', 'bus', 'other']
-const VEHICLE_MAP  = { 1:'Sedan', 2:'Sedan', 3:'SUV', 4:'SUV', 5:'Van', 6:'Van', 7:'Van', 8:'Van', 9:'Van' }
+const TRAVEL_MODES  = ['flight', 'train', 'bus', 'other']
+const VEHICLE_MAP   = (n) => n <= 2 ? 'Sedan' : n <= 4 ? 'SUV' : n <= 9 ? 'Van' : 'Bus'
 
 export default function GuestRequestTrip() {
-const [form, setForm] = useState({
-  pickupAddress: '', pickupLat: '', pickupLng: '',
-  dropAddress: '',
-  scheduledAt: '', passengerCount: 1,
-  travelMode: 'other', travelNumber: '', notes: '',
-})
+  const [pickup, setPickup]     = useState({ address:'', lat:'', lng:'' })
+  const [drop, setDrop]         = useState({ address:'', lat:'', lng:'' })
+  const [form, setForm]         = useState({
+    scheduledAt:'', passengerCount:1,
+    travelMode:'other', travelNumber:'', notes:'',
+  })
   const [loading, setLoading]   = useState(false)
-  const [result, setResult]     = useState(null)  
+  const [result, setResult]     = useState(null)
   const [error, setError]       = useState('')
-
-  const suggestedVehicle = VEHICLE_MAP[form.passengerCount] ||
-    (form.passengerCount >= 10 ? 'Bus' : 'Van')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!pickup.address) return setError('Pickup location select karo map se')
+    if (!drop.address)   return setError('Drop location select karo map se')
     setLoading(true); setError(''); setResult(null)
     try {
       const { data } = await api.post('/dispatch/request', {
-        pickupAddress:  form.pickupAddress,
-        dropAddress:    form.dropAddress,
+        pickupAddress:  pickup.address,
+        pickupLat:      pickup.lat,
+        pickupLng:      pickup.lng,
+        dropAddress:    drop.address,
+        dropLat:        drop.lat,
+        dropLng:        drop.lng,
         scheduledAt:    form.scheduledAt,
         passengerCount: Number(form.passengerCount),
         travelMode:     form.travelMode,
@@ -33,22 +37,22 @@ const [form, setForm] = useState({
         notes:          form.notes,
       })
       setResult(data)
-      setForm({ pickupAddress:'', dropAddress:'', scheduledAt:'', passengerCount:1, travelMode:'other', travelNumber:'', notes:'' })
+      setPickup({ address:'', lat:'', lng:'' })
+      setDrop({ address:'', lat:'', lng:'' })
+      setForm({ scheduledAt:'', passengerCount:1, travelMode:'other', travelNumber:'', notes:'' })
     } catch(err) {
       setError(err.response?.data?.message || 'Failed to submit request')
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
   return (
     <div className="space-y-6 max-w-xl">
       <div>
         <h1 className="page-title">Request a Trip</h1>
-        <p className="page-sub">Fill in the details — a driver will be auto-assigned</p>
+        <p className="page-sub">Map pe location select karo — driver auto-assign hoga</p>
       </div>
 
-      {/* Success state */}
+      {/* Success */}
       {result && (
         <div className={`card p-5 border-2 fade-up ${result.isQueued ? 'border-amber-200' : 'border-emerald-200'}`}>
           <div className="flex items-start gap-3">
@@ -56,25 +60,33 @@ const [form, setForm] = useState({
               ? <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
               : <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
             }
-            <div>
+            <div className="flex-1">
               <p className={`text-sm font-bold ${result.isQueued ? 'text-amber-700' : 'text-emerald-700'}`}>
-                {result.isQueued ? 'Added to Queue' : 'Driver Assigned!'}
+                {result.isQueued ? '⏳ Queue Mein Daala' : '✅ Driver Assign Ho Gaya!'}
               </p>
-              <p className="text-xs text-slate-500 mt-1">{result.message}</p>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">{result.message}</p>
 
               {!result.isQueued && result.data?.driver && (
-                <div className="mt-3 p-3 bg-slate-50 rounded-xl space-y-1">
-                  <p className="text-xs font-semibold text-slate-600">Your Driver</p>
-                  <p className="text-sm font-bold text-slate-700">{result.data.driver.name}</p>
+                <div className="mt-3 p-3 bg-slate-50 rounded-xl space-y-1.5">
+                  <p className="text-xs font-bold text-slate-600">Tumhara Driver</p>
+                  <p className="text-sm font-bold text-slate-800">{result.data.driver.name}</p>
                   <p className="text-xs text-slate-400">{result.data.driver.phone} · {result.data.driver.vehicleNumber}</p>
-                  {result.data.vehicle && (
-                    <p className="text-xs text-slate-400">{result.data.vehicle.vehicleType} · {result.data.vehicle.plateNumber}</p>
+                  {result.eta && (
+                    <p className="text-xs font-semibold text-brand-600">
+                      🕐 Approx {result.eta} minutes mein pickup pe pahonchega
+                    </p>
+                  )}
+                  {result.tripDuration && (
+                    <p className="text-xs text-slate-400">
+                      🗺️ Trip duration approx {result.tripDuration} minutes
+                    </p>
                   )}
                 </div>
               )}
 
-              <button onClick={() => setResult(null)} className="mt-3 text-xs text-brand-500 underline underline-offset-2">
-                Request another trip
+              <button onClick={() => setResult(null)}
+                className="mt-3 text-xs text-brand-500 underline underline-offset-2">
+                Aur ek trip request karo
               </button>
             </div>
           </div>
@@ -82,48 +94,23 @@ const [form, setForm] = useState({
       )}
 
       {!result && (
-        <form onSubmit={handleSubmit} className="card p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="card p-6 space-y-5">
 
-          {/* Pickup */}
-         
-<div>
-  <label className="label">Pickup Location</label>
-  <div className="relative">
-    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400" />
-    <input className="input pl-9" required value={form.pickupAddress}
-      onChange={e => setForm(p=>({...p,pickupAddress:e.target.value}))}
-      placeholder="Bhopal Airport" />
-  </div>
-  <div className="grid grid-cols-2 gap-2 mt-2">
-    <input
-      className="input text-xs"
-      type="number"
-      step="any"
-      value={form.pickupLat}
-      onChange={e => setForm(p=>({...p,pickupLat:e.target.value}))}
-      placeholder="Latitude  e.g. 23.2875"
-    />
-    <input
-      className="input text-xs"
-      type="number"
-      step="any"
-      value={form.pickupLng}
-      onChange={e => setForm(p=>({...p,pickupLng:e.target.value}))}
-      placeholder="Longitude  e.g. 77.3370"
-    />
-  </div>
-</div>
+          {/* Pickup — Map picker */}
+          <LocationPicker
+            label="Pickup Location"
+            color="emerald"
+            value={pickup}
+            onChange={setPickup}
+          />
 
-          {/* Drop */}
-          <div>
-            <label className="label">Drop Location</label>
-            <div className="relative">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-red-400" />
-              <input className="input pl-9" required value={form.dropAddress}
-                onChange={e => setForm(p=>({...p,dropAddress:e.target.value}))}
-                placeholder="Hotel Taj, Marine Drive" />
-            </div>
-          </div>
+          {/* Drop — Map picker */}
+          <LocationPicker
+            label="Drop Location"
+            color="red"
+            value={drop}
+            onChange={setDrop}
+          />
 
           {/* Date + Passengers */}
           <div className="grid grid-cols-2 gap-3">
@@ -131,7 +118,8 @@ const [form, setForm] = useState({
               <label className="label">Date & Time</label>
               <div className="relative">
                 <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input type="datetime-local" className="input pl-9" required value={form.scheduledAt}
+                <input type="datetime-local" className="input pl-9" required
+                  value={form.scheduledAt}
                   min={new Date().toISOString().slice(0,16)}
                   onChange={e => setForm(p=>({...p,scheduledAt:e.target.value}))} />
               </div>
@@ -140,22 +128,25 @@ const [form, setForm] = useState({
               <label className="label">Passengers</label>
               <div className="relative">
                 <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input type="number" className="input pl-9" min={1} max={20} value={form.passengerCount}
+                <input type="number" className="input pl-9" min={1} max={20}
+                  value={form.passengerCount}
                   onChange={e => setForm(p=>({...p,passengerCount:e.target.value}))} />
               </div>
             </div>
           </div>
 
           {/* Vehicle suggestion */}
-          <div className="px-3 py-2 bg-brand-50 rounded-xl border border-brand-100 text-xs text-brand-600">
-            🚗 Based on {form.passengerCount} passenger{form.passengerCount > 1 ? 's' : ''}, system will assign a <strong>{suggestedVehicle}</strong>
+          <div className="px-3 py-2.5 bg-brand-50 rounded-xl border border-brand-100 text-xs text-brand-600 flex items-center gap-2">
+            <span>🚗</span>
+            <span>{form.passengerCount} passenger{form.passengerCount>1?'s':''} ke liye system <strong>{VEHICLE_MAP(Number(form.passengerCount))}</strong> assign karega</span>
           </div>
 
           {/* Travel mode */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Travel Mode</label>
-              <select className="input" value={form.travelMode} onChange={e => setForm(p=>({...p,travelMode:e.target.value}))}>
+              <select className="input" value={form.travelMode}
+                onChange={e => setForm(p=>({...p,travelMode:e.target.value}))}>
                 {TRAVEL_MODES.map(m => <option key={m}>{m}</option>)}
               </select>
             </div>
@@ -171,10 +162,10 @@ const [form, setForm] = useState({
 
           {/* Notes */}
           <div>
-            <label className="label">Notes (optional)</label>
+            <label className="label">Special Instructions (optional)</label>
             <input className="input" value={form.notes}
               onChange={e => setForm(p=>({...p,notes:e.target.value}))}
-              placeholder="Wheelchair needed, extra luggage…" />
+              placeholder="Wheelchair, extra luggage, child seat…" />
           </div>
 
           {error && (
@@ -183,15 +174,16 @@ const [form, setForm] = useState({
             </p>
           )}
 
-          <button type="submit" className="btn-primary w-full justify-center py-3" disabled={loading}>
+          <button type="submit" disabled={loading}
+            className="btn-primary w-full justify-center py-3 text-sm">
             {loading
-              ? <><Loader2 className="w-4 h-4 animate-spin" /> Finding driver…</>
-              : '🚗 Request Trip'
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Driver dhundh rahe hain…</>
+              : '🚗 Trip Request Karo'
             }
           </button>
 
           <p className="text-[10px] text-center text-slate-400">
-            A driver will be automatically assigned. You'll be notified instantly.
+            Nearest available driver automatically assign hoga. Instant notification milegi.
           </p>
         </form>
       )}
